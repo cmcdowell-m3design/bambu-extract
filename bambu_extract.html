@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3MF Summary Extractor</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    h1 {
+      font-size: 1.8rem;
+    }
+    .drop-zone {
+      border: 2px dashed #aaa;
+      padding: 2rem;
+      border-radius: 12px;
+      background: white;
+      width: 100%;
+      max-width: 600px;
+      text-align: center;
+      cursor: pointer;
+      margin: 1rem 0;
+    }
+    table {
+      border-collapse: collapse;
+      margin-top: 1rem;
+      width: 100%;
+      max-width: 900px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 0.5rem;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+    th {
+      background: #eee;
+    }
+    button {
+      margin-top: 1rem;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 6px;
+      background: #4caf50;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #43a047;
+    }
+  </style>
+</head>
+<body>
+  <h1>3MF Print Summary Extractor</h1>
+  <div class="drop-zone" id="dropZone">Click or drop .3mf files here</div>
+  <input type="file" id="fileInput" multiple accept=".3mf" style="display:none" />
+  <div id="output"></div>
+  <button id="downloadBtn" style="display:none">Download CSV</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const output = document.getElementById('output');
+    const downloadBtn = document.getElementById('downloadBtn');
+    let tableData = [];
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.background = '#e0f7fa'; });
+    dropZone.addEventListener('dragleave', () => dropZone.style.background = 'white');
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.style.background = 'white';
+      handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    async function handleFiles(files) {
+      tableData = [];
+      output.innerHTML = '<p>Processing files...</p>';
+      for (const file of files) {
+        const zip = await JSZip.loadAsync(file);
+        const sliceInfoPath = Object.keys(zip.files).find(name => name.includes('slice_info.config'));
+        const modelName = file.name.replace(/\.3mf$/, '');
+
+        if (!sliceInfoPath) continue;
+
+        const xmlText = await zip.files[sliceInfoPath].async('string');
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+        const get = (key) => xmlDoc.querySelector(`[key="${key}"]`)?.getAttribute('value');
+
+        const predictionSec = parseInt(get('prediction')) || 0;
+        const timeMin = Math.ceil(predictionSec / 60);
+        const printer = get('printer_model_id');
+
+        const filaments = [...xmlDoc.querySelectorAll('filament')].map(f => ({
+          type: f.getAttribute('type'),
+          g: f.getAttribute('used_g'),
+        }));
+
+        tableData.push({ model: modelName, printer, timeMin, filaments });
+      }
+
+      renderTable();
+    }
+
+    function renderTable() {
+      if (!tableData.length) return output.innerHTML = '<p>No valid 3MF files processed.</p>';
+
+      const rows = tableData.map(entry => {
+        const cells = [
+          `<td>${entry.model}</td>`,
+          `<td>${entry.printer}</td>`,
+          `<td>${entry.timeMin} min</td>`
+        ];
+        for (let i = 0; i < 4; i++) {
+          const f = entry.filaments[i] || {};
+          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g + 'g' : ''}</td>`);
+        }
+        return `<tr>${cells.join('')}</tr>`;
+      }).join('');
+
+      output.innerHTML = `
+        <table>
+          <thead>
+            <tr>
+              <th>Model</th><th>Printer</th><th>Estimated Time</th>
+              <th>Filament 1</th><th>Filament 1 Weight</th>
+              <th>Filament 2</th><th>Filament 2 Weight</th>
+              <th>Filament 3</th><th>Filament 3 Weight</th>
+              <th>Filament 4</th><th>Filament 4 Weight</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+
+      downloadBtn.style.display = 'inline-block';
+    }
+
+    downloadBtn.addEventListener('click', () => {
+      const headers = [
+        'Model', 'Printer', 'Estimated Time',
+        'Filament 1', 'Filament 1 Weight',
+        'Filament 2', 'Filament 2 Weight',
+        'Filament 3', 'Filament 3 Weight',
+        'Filament 4', 'Filament 4 Weight'
+      ];
+      const csv = [
+        headers,
+        ...tableData.map(row => {
+          const rowArray = [row.model, row.printer, `${row.timeMin} min`];
+          for (let i = 0; i < 4; i++) {
+            const f = row.filaments[i] || {};
+            rowArray.push(f.type || '', f.g ? `${f.g}g` : '');
+          }
+          return rowArray;
+        })
+      ].map(e => e.join(',')).join('\n');
+
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '3mf_summary.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+</body>
+</html>
