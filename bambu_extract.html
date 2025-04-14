@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -14,9 +15,11 @@
       flex-direction: column;
       align-items: center;
     }
+
     h1 {
       font-size: 1.8rem;
     }
+
     .drop-zone {
       border: 2px dashed #aaa;
       padding: 2rem;
@@ -28,21 +31,26 @@
       cursor: pointer;
       margin: 1rem 0;
     }
+
     table {
       border-collapse: collapse;
       margin-top: 1rem;
       width: 100%;
       max-width: 900px;
     }
-    th, td {
+
+    th,
+    td {
       border: 1px solid #ccc;
       padding: 0.5rem;
       text-align: left;
       font-size: 0.9rem;
     }
+
     th {
       background: #eee;
     }
+
     button {
       margin-top: 1rem;
       padding: 0.5rem 1rem;
@@ -53,11 +61,13 @@
       color: white;
       cursor: pointer;
     }
+
     button:hover {
       background: #43a047;
     }
   </style>
 </head>
+
 <body>
   <h1>3MF Print Summary Extractor</h1>
   <div class="drop-zone" id="dropZone">Click or drop .3mf files here</div>
@@ -90,6 +100,8 @@
         const zip = await JSZip.loadAsync(file);
         const sliceInfoPath = Object.keys(zip.files).find(name => name.includes('slice_info.config'));
         const modelName = file.name.replace(/\.3mf$/, '');
+        const billingCode = modelName.split(/[_-]/)[0];
+
 
         if (!sliceInfoPath) continue;
 
@@ -107,7 +119,7 @@
           g: f.getAttribute('used_g'),
         }));
 
-        tableData.push({ model: modelName, printer, timeMin, filaments });
+        tableData.push({ model: modelName, billingCode, printer, timeMin, filaments });
       }
 
       renderTable();
@@ -119,6 +131,7 @@
       const rows = tableData.map(entry => {
         const cells = [
           `<td>${entry.model}</td>`,
+          `<td>${entry.billingCode}</td>`,
           `<td>${entry.printer}</td>`,
           `<td>${entry.timeMin} min</td>`
         ];
@@ -133,7 +146,7 @@
         <table>
           <thead>
             <tr>
-              <th>Model</th><th>Printer</th><th>Estimated Time</th>
+              <th>File Name</th><th>Billing Code</th><th>Printer</th><th>Estimated Time</th>
               <th>Filament 1</th><th>Filament 1 Weight</th>
               <th>Filament 2</th><th>Filament 2 Weight</th>
               <th>Filament 3</th><th>Filament 3 Weight</th>
@@ -149,7 +162,7 @@
 
     downloadBtn.addEventListener('click', () => {
       const headers = [
-        'Model', 'Printer', 'Estimated Time',
+        'File Name', 'Billing Code', 'Printer', 'Estimated Time',
         'Filament 1', 'Filament 1 Weight',
         'Filament 2', 'Filament 2 Weight',
         'Filament 3', 'Filament 3 Weight',
@@ -158,7 +171,7 @@
       const csv = [
         headers,
         ...tableData.map(row => {
-          const rowArray = [row.model, row.printer, `${row.timeMin} min`];
+          const rowArray = [row.model, row.billingCode, row.printer, `${row.timeMin} min`];
           for (let i = 0; i < 4; i++) {
             const f = row.filaments[i] || {};
             rowArray.push(f.type || '', f.g ? `${f.g}g` : '');
@@ -177,4 +190,5 @@
     });
   </script>
 </body>
+
 </html>
