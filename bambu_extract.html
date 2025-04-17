@@ -70,7 +70,7 @@
 
 <body>
   <h1>3MF Print Summary Extractor</h1>
-  <h3>Version: 1.0.0</h3>
+  <h3>Version: 1.0.1</h3>
   <div class="drop-zone" id="dropZone">Click or drop .3mf files here</div>
   <input type="file" id="fileInput" multiple accept=".3mf" style="display:none" />
   <div id="output"></div>
@@ -115,12 +115,15 @@
         const timeMin = Math.ceil(predictionSec / 60);
         const printer = get('printer_model_id');
 
+        const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+        const entryDate = zip.files[sliceInfoPath].date.toLocaleDateString('en-US', options);
+
         const filaments = [...xmlDoc.querySelectorAll('filament')].map(f => ({
           type: f.getAttribute('type'),
           g: f.getAttribute('used_g'),
         }));
 
-        tableData.push({ model: modelName, billingCode, printer, timeMin, filaments });
+        tableData.push({ model: modelName, billingCode, entryDate, printer, timeMin, filaments });
       }
 
       renderTable();
@@ -138,6 +141,7 @@
         const cells = [
           `<td>${entry.model}</td>`,
           `<td>${entry.billingCode}</td>`,
+          `<td>${entry.entryDate}</td>`,
           `<td>${entry.printer}</td>`,
           `<td>${entry.timeMin} min</td>`
         ];
@@ -153,6 +157,7 @@
         const cells = [
           `<td>${entry.model}</td>`,
           `<td>${entry.billingCode}</td>`,
+          `<td>${entry.entryDate}</td>`,
           `<td>${entry.printer}</td>`,
           `<td>${entry.timeMin} min</td>`
         ];
@@ -171,7 +176,7 @@
         <table>
           <thead>
             <tr>
-              <th>File Name</th><th>Billing Code</th><th>Printer</th><th>Estimated Time</th>
+              <th>File Name</th><th>Billing Code</th><th>Date</th><th>Printer</th><th>Estimated Time</th>
               <th>Filament 1</th><th>Filament 1 Weight</th>
               <th>Filament 2</th><th>Filament 2 Weight</th>
               <th>Filament 3</th><th>Filament 3 Weight</th>
@@ -191,7 +196,7 @@
 
     downloadBtn.addEventListener('click', () => {
       const headers = [
-        'File Name', 'Billing Code', 'Printer', 'Estimated Time',
+        'File Name', 'Billing Code', 'Date', 'Printer', 'Estimated Time',
         'Filament 1', 'Filament 1 Weight',
         'Filament 2', 'Filament 2 Weight',
         'Filament 3', 'Filament 3 Weight',
@@ -205,7 +210,7 @@
       // Create CSV rows with a blank separator row if needed
       const csvRows = [
         ...regularEntries.map(row => {
-          const rowArray = [row.model, row.billingCode, row.printer, `${row.timeMin} min`];
+          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin} min`];
           for (let i = 0; i < 4; i++) {
             const f = row.filaments[i] || {};
             rowArray.push(f.type || '', f.g ? `${f.g}g` : '');
