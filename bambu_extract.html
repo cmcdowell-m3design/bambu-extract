@@ -123,6 +123,14 @@
           g: f.getAttribute('used_g'),
         }));
 
+        tableData.forEach(entry => {
+          const billingCodeLength = entry.billingCode.length;
+          // Replace billing code with "none" if its length is not 4, 5, or 6
+          if (billingCodeLength !== 4 && billingCodeLength !== 5 && billingCodeLength !== 6) {
+            entry.billingCode = 'none'; // Modify the billing code directly
+          }
+        });
+
         tableData.push({ model: modelName, billingCode, entryDate, printer, timeMin, filaments });
       }
 
@@ -143,11 +151,11 @@
           `<td>${entry.billingCode}</td>`,
           `<td>${entry.entryDate}</td>`,
           `<td>${entry.printer}</td>`,
-          `<td>${entry.timeMin} min</td>`
+          `<td>${entry.timeMin}</td>`
         ];
         for (let i = 0; i < 4; i++) {
           const f = entry.filaments[i] || {};
-          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g + 'g' : ''}</td>`);
+          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g : ''}</td>`);
         }
         return `<tr>${cells.join('')}</tr>`;
       }).join('');
@@ -159,11 +167,11 @@
           `<td>${entry.billingCode}</td>`,
           `<td>${entry.entryDate}</td>`,
           `<td>${entry.printer}</td>`,
-          `<td>${entry.timeMin} min</td>`
+          `<td>${entry.timeMin}</td>`
         ];
         for (let i = 0; i < 4; i++) {
           const f = entry.filaments[i] || {};
-          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g + 'g' : ''}</td>`);
+          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g : ''}</td>`);
         }
         return `<tr>${cells.join('')}</tr>`;
       }).join('');
@@ -176,11 +184,11 @@
         <table>
           <thead>
             <tr>
-              <th>File Name</th><th>Billing Code</th><th>Date</th><th>Printer</th><th>Estimated Time</th>
-              <th>Filament 1</th><th>Filament 1 Weight</th>
-              <th>Filament 2</th><th>Filament 2 Weight</th>
-              <th>Filament 3</th><th>Filament 3 Weight</th>
-              <th>Filament 4</th><th>Filament 4 Weight</th>
+              <th>File Name</th><th>Billing Code</th><th>Date</th><th>Printer</th><th>Estimated Time (minutes)</th>
+              <th>Filament 1</th><th>Filament 1 Weight (g)</th>
+              <th>Filament 2</th><th>Filament 2 Weight (g)</th>
+              <th>Filament 3</th><th>Filament 3 Weight (g)</th>
+              <th>Filament 4</th><th>Filament 4 Weight (g)</th>
             </tr>
           </thead>
           <tbody>
@@ -196,11 +204,11 @@
 
     downloadBtn.addEventListener('click', () => {
       const headers = [
-        'File Name', 'Billing Code', 'Date', 'Printer', 'Estimated Time',
-        'Filament 1', 'Filament 1 Weight',
-        'Filament 2', 'Filament 2 Weight',
-        'Filament 3', 'Filament 3 Weight',
-        'Filament 4', 'Filament 4 Weight'
+        'File Name', 'Billing Code', 'Date', 'Printer', 'Estimated Time (minutes)',
+        'Filament 1', 'Filament 1 Weight (g)',
+        'Filament 2', 'Filament 2 Weight (g)',
+        'Filament 3', 'Filament 3 Weight (g)',
+        'Filament 4', 'Filament 4 Weight (g)'
       ];
 
       // Separate entries for CSV in the same way as the table
@@ -210,19 +218,19 @@
       // Create CSV rows with a blank separator row if needed
       const csvRows = [
         ...regularEntries.map(row => {
-          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin} min`];
+          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin}`];
           for (let i = 0; i < 4; i++) {
             const f = row.filaments[i] || {};
-            rowArray.push(f.type || '', f.g ? `${f.g}g` : '');
+            rowArray.push(f.type || '', f.g ? `${f.g}` : '');
           }
           return rowArray;
         }),
         ...(regularEntries.length > 0 && m308Entries.length > 0 ? [['']] : []),
         ...m308Entries.map(row => {
-          const rowArray = [row.model, row.billingCode, row.printer, `${row.timeMin} min`];
+          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin}`];
           for (let i = 0; i < 4; i++) {
             const f = row.filaments[i] || {};
-            rowArray.push(f.type || '', f.g ? `${f.g}g` : '');
+            rowArray.push(f.type || '', f.g ? `${f.g}` : '');
           }
           return rowArray;
         })
