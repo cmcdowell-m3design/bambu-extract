@@ -97,149 +97,117 @@
     async function handleFiles(files) {
       tableData = [];
       output.innerHTML = '<p>Processing files...</p>';
+
       for (const file of files) {
-        const zip = await JSZip.loadAsync(file);
-        const sliceInfoPath = Object.keys(zip.files).find(name => name.includes('slice_info.config'));
-        const modelName = file.name.replace(/\.3mf$/, '');
-        const billingCode = modelName.split(/[_-]/)[0].toUpperCase();
+        try {
+          const zip = await JSZip.loadAsync(file);
+          const sliceInfoPath = Object.keys(zip.files).find(name => name.includes('slice_info.config'));
+          if (!sliceInfoPath) continue;
 
+          const modelName = file.name.replace(/\.3mf$/, '');
+          const billingCode = modelName.split(/[_-]/)[0].toUpperCase();
 
-        if (!sliceInfoPath) continue;
+          const xmlText = await zip.files[sliceInfoPath].async('string');
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+          const get = (key) => xmlDoc.querySelector(`[key="${key}"]`)?.getAttribute('value');
 
-        const xmlText = await zip.files[sliceInfoPath].async('string');
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-        const get = (key) => xmlDoc.querySelector(`[key="${key}"]`)?.getAttribute('value');
+          const predictionSec = parseInt(get('prediction')) || 0;
+          const timeMin = Math.ceil(predictionSec / 60);
+          const printer = get('printer_model_id');
 
-        const predictionSec = parseInt(get('prediction')) || 0;
-        const timeMin = Math.ceil(predictionSec / 60);
-        const printer = get('printer_model_id');
+          const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
+          const entryDate = zip.files[sliceInfoPath].date.toLocaleDateString('en-US', options);
 
-        const options = { year: 'numeric', month: '2-digit', day: '2-digit' };
-        const entryDate = zip.files[sliceInfoPath].date.toLocaleDateString('en-US', options);
+          const filaments = [...xmlDoc.querySelectorAll('filament')].map(f => ({
+            type: f.getAttribute('type'),
+            g: f.getAttribute('used_g'),
+          }));
 
-        const filaments = [...xmlDoc.querySelectorAll('filament')].map(f => ({
-          type: f.getAttribute('type'),
-          g: f.getAttribute('used_g'),
-        }));
+          // Validate billing code
+          const cleanedBillingCode =
+            [4, 5, 6].includes(billingCode.length) ? billingCode : 'none';
 
-        tableData.forEach(entry => {
-          const billingCodeLength = entry.billingCode.length;
-          // Replace billing code with "none" if its length is not 4, 5, or 6
-          if (billingCodeLength !== 4 && billingCodeLength !== 5 && billingCodeLength !== 6) {
-            entry.billingCode = 'none'; // Modify the billing code directly
-          }
-        });
-
-        tableData.push({ model: modelName, billingCode, entryDate, printer, timeMin, filaments });
+          tableData.push({ model: modelName, billingCode: cleanedBillingCode, entryDate, printer, timeMin, filaments });
+        } catch (err) {
+          console.warn(`Skipping ${file.name}: ${err.message}`);
+        }
       }
 
       renderTable();
     }
 
+
+    function prepareGroupedData(data, specialCode = 'M308') {
+      const isSpecial = (code) => code.toUpperCase() === specialCode;
+
+      const regular = data.filter(entry => !isSpecial(entry.billingCode));
+      const special = data.filter(entry => isSpecial(entry.billingCode));
+
+      const formatRow = (entry) => {
+        const row = [entry.model, entry.billingCode, entry.entryDate, entry.printer, `${entry.timeMin}`];
+        for (let i = 0; i < 4; i++) {
+          const f = entry.filaments[i] || {};
+          row.push(f.type || '', f.g || '');
+        }
+        return row;
+      };
+
+      return {
+        headers: [
+          'File Name', 'Billing Code', 'Date', 'Printer', 'Estimated Time (minutes)',
+          'Filament 1', 'Filament 1 Weight (g)',
+          'Filament 2', 'Filament 2 Weight (g)',
+          'Filament 3', 'Filament 3 Weight (g)',
+          'Filament 4', 'Filament 4 Weight (g)'
+        ],
+        regular: regular.map(formatRow),
+        special: special.map(formatRow),
+        specialLabel: `Jobs with billing code: ${specialCode}`
+      };
+    }
+
+
     function renderTable() {
       if (!tableData.length) return output.innerHTML = '<p>No valid 3MF files processed.</p>';
 
-      // Separate entries into two groups based on billing code
-      const regularEntries = tableData.filter(entry => entry.billingCode.toUpperCase() !== 'M308');
-      const m308Entries = tableData.filter(entry => entry.billingCode.toUpperCase() === 'M308');
+      const { headers, regular, special, specialLabel } = prepareGroupedData(tableData);
 
-      // Generate rows for regular entries
-      const regularRows = regularEntries.map(entry => {
-        const cells = [
-          `<td>${entry.model}</td>`,
-          `<td>${entry.billingCode}</td>`,
-          `<td>${entry.entryDate}</td>`,
-          `<td>${entry.printer}</td>`,
-          `<td>${entry.timeMin}</td>`
-        ];
-        for (let i = 0; i < 4; i++) {
-          const f = entry.filaments[i] || {};
-          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g : ''}</td>`);
-        }
-        return `<tr>${cells.join('')}</tr>`;
-      }).join('');
+      const buildHtmlRows = (rows) => rows.map(row =>
+        '<tr>' + row.map(cell => `<td>${cell}</td>`).join('') + '</tr>'
+      ).join('');
 
-      // Generate rows for M308 entries
-      const m308Rows = m308Entries.map(entry => {
-        const cells = [
-          `<td>${entry.model}</td>`,
-          `<td>${entry.billingCode}</td>`,
-          `<td>${entry.entryDate}</td>`,
-          `<td>${entry.printer}</td>`,
-          `<td>${entry.timeMin}</td>`
-        ];
-        for (let i = 0; i < 4; i++) {
-          const f = entry.filaments[i] || {};
-          cells.push(`<td>${f.type || ''}</td>`, `<td>${f.g ? f.g : ''}</td>`);
-        }
-        return `<tr>${cells.join('')}</tr>`;
-      }).join('');
-
-      // Create empty row separator if we have both types of entries
-      const separatorRow = (regularEntries.length > 0 && m308Entries.length > 0) ?
-        '<tr><td colspan="12" style="height: 20px; background-color: #f7f7f7;"></td></tr>' : '';
+      const separatorRow = (regular.length && special.length)
+        ? `<tr><td colspan="${headers.length}" style="text-align:center; background:#eee; font-weight:bold;">${specialLabel}</td></tr>`
+        : '';
 
       output.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>File Name</th><th>Billing Code</th><th>Date</th><th>Printer</th><th>Estimated Time (minutes)</th>
-              <th>Filament 1</th><th>Filament 1 Weight (g)</th>
-              <th>Filament 2</th><th>Filament 2 Weight (g)</th>
-              <th>Filament 3</th><th>Filament 3 Weight (g)</th>
-              <th>Filament 4</th><th>Filament 4 Weight (g)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${regularRows}
-            ${separatorRow}
-            ${m308Rows}
-          </tbody>
-        </table>
-      `;
+    <table>
+      <thead>
+        <tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${buildHtmlRows(regular)}
+        ${separatorRow}
+        ${buildHtmlRows(special)}
+      </tbody>
+    </table>
+  `;
 
       downloadBtn.style.display = 'inline-block';
     }
 
+
     downloadBtn.addEventListener('click', () => {
-      const headers = [
-        'File Name', 'Billing Code', 'Date', 'Printer', 'Estimated Time (minutes)',
-        'Filament 1', 'Filament 1 Weight (g)',
-        'Filament 2', 'Filament 2 Weight (g)',
-        'Filament 3', 'Filament 3 Weight (g)',
-        'Filament 4', 'Filament 4 Weight (g)'
-      ];
+      const { headers, regular, special, specialLabel } = prepareGroupedData(tableData);
 
-      // Separate entries for CSV in the same way as the table
-      const regularEntries = tableData.filter(entry => entry.billingCode.toUpperCase() !== 'M308');
-      const m308Entries = tableData.filter(entry => entry.billingCode.toUpperCase() === 'M308');
-
-      // Create CSV rows with a blank separator row if needed
       const csvRows = [
-        ...regularEntries.map(row => {
-          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin}`];
-          for (let i = 0; i < 4; i++) {
-            const f = row.filaments[i] || {};
-            rowArray.push(f.type || '', f.g ? `${f.g}` : '');
-          }
-          return rowArray;
-        }),
-        ...(regularEntries.length > 0 && m308Entries.length > 0 ? [['']] : []),
-        ...m308Entries.map(row => {
-          const rowArray = [row.model, row.billingCode, row.entryDate, row.printer, `${row.timeMin}`];
-          for (let i = 0; i < 4; i++) {
-            const f = row.filaments[i] || {};
-            rowArray.push(f.type || '', f.g ? `${f.g}` : '');
-          }
-          return rowArray;
-        })
+        ...regular,
+        ...(regular.length && special.length ? [['']] : []),
+        ...(special.length ? [[specialLabel], headers, ...special] : [])
       ];
 
-      const csv = [
-        headers,
-        ...csvRows
-      ].map(e => e.join(',')).join('\n');
+      const csv = [headers, ...csvRows].map(row => row.join(',')).join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
@@ -249,6 +217,7 @@
       a.click();
       URL.revokeObjectURL(url);
     });
+
   </script>
 </body>
 
