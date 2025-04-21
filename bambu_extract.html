@@ -60,28 +60,40 @@
       background: #4caf50;
       color: white;
       cursor: pointer;
+      margin-right: 0.5rem;
     }
 
     button:hover {
       background: #43a047;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
     }
   </style>
 </head>
 
 <body>
   <h1>3MF Print Summary Extractor</h1>
-  <h3>Version: 1.0.1</h3>
+  <h3>Version: 1.0.2</h3>
   <div class="drop-zone" id="dropZone">Click or drop .3mf files here</div>
   <input type="file" id="fileInput" multiple accept=".3mf" style="display:none" />
   <div id="output"></div>
-  <button id="downloadBtn" style="display:none">Download CSV</button>
+  <div class="button-group" id="buttonGroup" style="display:none">
+    <button id="downloadCsvBtn">Download CSV</button>
+    <button id="downloadXlsxBtn">Download Excel</button>
+  </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.0/jszip.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.19.3/package/dist/xlsx.mini.min.js"></script>
   <script>
     const dropZone = document.getElementById('dropZone');
     const fileInput = document.getElementById('fileInput');
     const output = document.getElementById('output');
-    const downloadBtn = document.getElementById('downloadBtn');
+    const buttonGroup = document.getElementById('buttonGroup');
+    const downloadCsvBtn = document.getElementById('downloadCsvBtn');
+    const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
     let tableData = [];
 
     dropZone.addEventListener('click', () => fileInput.click());
@@ -137,7 +149,6 @@
       renderTable();
     }
 
-
     function prepareGroupedData(data, specialCode = 'M308') {
       const isSpecial = (code) => code.toUpperCase() === specialCode;
 
@@ -167,7 +178,6 @@
       };
     }
 
-
     function renderTable() {
       if (!tableData.length) return output.innerHTML = '<p>No valid 3MF files processed.</p>';
 
@@ -194,20 +204,26 @@
     </table>
   `;
 
-      downloadBtn.style.display = 'inline-block';
+      buttonGroup.style.display = 'flex';
     }
 
-
-    downloadBtn.addEventListener('click', () => {
+    function prepareExportData() {
       const { headers, regular, special, specialLabel } = prepareGroupedData(tableData);
 
-      const csvRows = [
-        ...regular,
-        ...(regular.length && special.length ? [['']] : []),
-        ...(special.length ? [[specialLabel], headers, ...special] : [])
-      ];
+      return {
+        headers,
+        rows: [
+          ...regular,
+          ...(regular.length && special.length ? [['']] : []),
+          ...(special.length ? [[specialLabel], ...special] : [])
+        ]
+      };
+    }
 
-      const csv = [headers, ...csvRows].map(row => row.join(',')).join('\n');
+    downloadCsvBtn.addEventListener('click', () => {
+      const { headers, rows } = prepareExportData();
+
+      const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
 
       const blob = new Blob([csv], { type: 'text/csv' });
       const url = URL.createObjectURL(blob);
@@ -218,6 +234,40 @@
       URL.revokeObjectURL(url);
     });
 
+    downloadXlsxBtn.addEventListener('click', () => {
+      const { headers, rows } = prepareExportData();
+
+      // Create workbook and worksheet
+      const wb = XLSX.utils.book_new();
+
+      // Convert to worksheet format
+      const data = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+
+      // Set column widths
+      const colWidths = [
+        { wch: 30 }, // File Name
+        { wch: 15 }, // Billing Code
+        { wch: 12 }, // Date
+        { wch: 15 }, // Printer
+        { wch: 15 }, // Time
+        { wch: 15 }, // Filament 1
+        { wch: 15 }, // Weight 1
+        { wch: 15 }, // Filament 2
+        { wch: 15 }, // Weight 2
+        { wch: 15 }, // Filament 3
+        { wch: 15 }, // Weight 3
+        { wch: 15 }, // Filament 4
+        { wch: 15 }  // Weight 4
+      ];
+      ws['!cols'] = colWidths;
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(wb, ws, "3MF Summary");
+
+      // Generate XLSX file and trigger download
+      XLSX.writeFile(wb, "3mf_summary.xlsx");
+    });
   </script>
 </body>
 
