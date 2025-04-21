@@ -71,14 +71,71 @@
       display: flex;
       gap: 10px;
     }
+
+    .price-controls {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin: 15px 0;
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      width: 100%;
+      max-width: 600px;
+    }
+
+    .input-group {
+      display: flex;
+      align-items: center;
+    }
+
+    .input-group label {
+      margin-right: 8px;
+      font-size: 0.9rem;
+    }
+
+    .input-group input {
+      width: 80px;
+      padding: 6px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 0.9rem;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #4caf50;
+      box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
+    .price-error {
+      color: #d32f2f;
+      font-size: 0.8rem;
+      margin-top: 5px;
+    }
   </style>
 </head>
 
 <body>
   <h1>3MF Print Summary Extractor</h1>
-  <h3>Version: 1.0.2</h3>
+  <h3>Version: 1.1.0</h3>
   <div class="drop-zone" id="dropZone">Click or drop .3mf files here</div>
   <input type="file" id="fileInput" multiple accept=".3mf" style="display:none" />
+
+  <div class="price-controls" id="priceControls" style="display:none">
+    <div class="input-group">
+      <label for="perGramCost">Per-Gram Cost ($):</label>
+      <input type="text" id="perGramCost" value="0.40" pattern="^\d+(\.\d{1,2})?$">
+    </div>
+    <div class="input-group">
+      <label for="flatRate">Flat Rate ($):</label>
+      <input type="text" id="flatRate" value="23.20" pattern="^\d+(\.\d{1,2})?$">
+    </div>
+    <button id="updatePricesBtn">Update Prices</button>
+    <div id="priceError" class="price-error"></div>
+  </div>
+
   <div id="output"></div>
   <div class="button-group" id="buttonGroup" style="display:none">
     <button id="downloadCsvBtn">Download CSV</button>
@@ -94,6 +151,11 @@
     const buttonGroup = document.getElementById('buttonGroup');
     const downloadCsvBtn = document.getElementById('downloadCsvBtn');
     const downloadXlsxBtn = document.getElementById('downloadXlsxBtn');
+    const priceControls = document.getElementById('priceControls');
+    const perGramCostInput = document.getElementById('perGramCost');
+    const flatRateInput = document.getElementById('flatRate');
+    const updatePricesBtn = document.getElementById('updatePricesBtn');
+    const priceError = document.getElementById('priceError');
     let tableData = [];
 
     dropZone.addEventListener('click', () => fileInput.click());
@@ -149,8 +211,65 @@
       renderTable();
     }
 
+    // Function to validate price inputs
+    function validatePriceInputs() {
+      const perGramCostValue = perGramCostInput.value.trim();
+      const flatRateValue = flatRateInput.value.trim();
+      const pricePattern = /^\d*(\.\d{1,2})?$/;
+
+
+      let isValid = true;
+      let errorMessage = '';
+
+      if (!pricePattern.test(perGramCostValue)) {
+        isValid = false;
+        errorMessage = 'Per-Gram Cost must be a valid number with up to 2 decimal places.';
+      } else if (!pricePattern.test(flatRateValue)) {
+        isValid = false;
+        errorMessage = 'Flat Rate must be a valid number with up to 2 decimal places.';
+      }
+
+      priceError.textContent = errorMessage;
+      return isValid;
+    }
+
+    // Calculate total filament weight for an entry
+    function calculateTotalWeight(entry) {
+      let totalWeight = 0;
+      entry.filaments.forEach(filament => {
+        const weight = parseFloat(filament.g) || 0;
+        totalWeight += weight;
+      });
+      return totalWeight;
+    }
+
+    // Calculate price based on weight, per-gram cost, and flat rate
+    function calculatePrice(weight, perGramCost, flatRate) {
+      return (weight * perGramCost) + flatRate;
+    }
+
+    // Get current pricing parameters
+    function getPricingParams() {
+      const per = parseFloat(perGramCostInput.value);
+      const flat = parseFloat(flatRateInput.value);
+
+      return {
+        perGramCost: isNaN(per) ? 0.40 : per,
+        flatRate: isNaN(flat) ? 23.20 : flat
+      };
+    }
+
+
+    // Event listener for Update Prices button
+    updatePricesBtn.addEventListener('click', () => {
+      if (validatePriceInputs()) {
+        renderTable();
+      }
+    });
+
     function prepareGroupedData(data, specialCode = 'M308') {
       const isSpecial = (code) => code.toUpperCase() === specialCode;
+      const { perGramCost, flatRate } = getPricingParams();
 
       const regular = data.filter(entry => !isSpecial(entry.billingCode));
       const special = data.filter(entry => isSpecial(entry.billingCode));
@@ -161,6 +280,14 @@
           const f = entry.filaments[i] || {};
           row.push(f.type || '', f.g || '');
         }
+
+        // Calculate total weight and price
+        const totalWeight = calculateTotalWeight(entry);
+        const totalPrice = calculatePrice(totalWeight, perGramCost, flatRate);
+
+        // Add total price to the row, formatted as currency
+        row.push(`$${totalPrice.toFixed(2)}`);
+
         return row;
       };
 
@@ -170,7 +297,8 @@
           'Filament 1', 'Filament 1 Weight (g)',
           'Filament 2', 'Filament 2 Weight (g)',
           'Filament 3', 'Filament 3 Weight (g)',
-          'Filament 4', 'Filament 4 Weight (g)'
+          'Filament 4', 'Filament 4 Weight (g)',
+          'Total Price (USD)'
         ],
         regular: regular.map(formatRow),
         special: special.map(formatRow),
@@ -180,6 +308,9 @@
 
     function renderTable() {
       if (!tableData.length) return output.innerHTML = '<p>No valid 3MF files processed.</p>';
+
+      // Show price controls when there's data
+      priceControls.style.display = 'flex';
 
       const { headers, regular, special, specialLabel } = prepareGroupedData(tableData);
 
@@ -236,6 +367,7 @@
 
     downloadXlsxBtn.addEventListener('click', () => {
       const { headers, rows } = prepareExportData();
+      const { perGramCost, flatRate } = getPricingParams();
 
       // Create workbook and worksheet
       const wb = XLSX.utils.book_new();
@@ -243,6 +375,56 @@
       // Convert to worksheet format
       const data = [headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(data);
+
+      // Get the range of the worksheet
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      const lastColumn = XLSX.utils.encode_col(range.e.c);
+
+      // Add pricing parameters in separate cells at the bottom of the sheet
+      const lastDataRow = range.e.r + 2; // Leave one empty row after the data
+      const paramRow1 = lastDataRow + 1;
+      const paramRow2 = lastDataRow + 2;
+
+      // Add labels and values for pricing parameters
+      ws[`A${paramRow1}`] = { v: "Per-Gram Cost ($):", t: "s" };
+      ws[`B${paramRow1}`] = { v: perGramCost, t: "n" };
+      ws[`A${paramRow2}`] = { v: "Flat Rate ($):", t: "s" };
+      ws[`B${paramRow2}`] = { v: flatRate, t: "n" };
+
+      // Format the parameter cells
+      ws[`B${paramRow1}`].z = "0.00";
+      ws[`B${paramRow2}`].z = "0.00";
+
+      // Update the range to include our new rows
+      const newRange = XLSX.utils.decode_range(ws['!ref']);
+      newRange.e.r = paramRow2;
+      ws['!ref'] = XLSX.utils.encode_range(newRange);
+
+      // Add formulas for the total price column (only for actual data rows, not headers or separators)
+      const formulaColIndex = headers.length - 1; // Last column index
+
+      for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
+        const row = data[rowIdx];
+        // Skip empty rows or rows with special headers
+        if (row.length === 0 || row.length === 1) continue;
+
+        // Calculate the sum of all filament weights (columns 6, 8, 10, 12)
+        // These correspond to the weight columns (index starts at 0)
+        const filamentWeightColumns = [6, 8, 10, 12];
+        const cellRefs = filamentWeightColumns.map(col => `${XLSX.utils.encode_col(col)}${rowIdx + 1}`);
+
+        // Create the formula: (sum of weights × perGramCost) + flatRate
+        // Now reference the parameter cells using named ranges
+        const sumFormula = `SUM(${cellRefs.join(',')})`;
+        const formula = `(${sumFormula}*PER_GRAM_COST)+FLAT_RATE`;
+
+        // Format as currency with $ and 2 decimal places
+        const cell = ws[`${lastColumn}${rowIdx + 1}`];
+        if (cell) {
+          cell.f = formula;
+          cell.z = '"$"#,##0.00';
+        }
+      }
 
       // Set column widths
       const colWidths = [
@@ -258,12 +440,34 @@
         { wch: 15 }, // Filament 3
         { wch: 15 }, // Weight 3
         { wch: 15 }, // Filament 4
-        { wch: 15 }  // Weight 4
+        { wch: 15 }, // Weight 4
+        { wch: 15 }, // Total Price
       ];
       ws['!cols'] = colWidths;
 
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(wb, ws, "3MF Summary");
+
+      // Add named ranges for the pricing parameters
+      if (!wb.Workbook) wb.Workbook = {};
+      if (!wb.Workbook.Names) wb.Workbook.Names = [];
+
+      // Add named ranges (Excel named cells) for the price parameters
+      wb.Workbook.Names.push(
+        {
+          Name: "PER_GRAM_COST",
+          Ref: `'3MF Summary'!$B$${paramRow1}`,
+          Sheet: wb.SheetNames.indexOf("3MF Summary") // <-- Worksheet scope
+        },
+        {
+          Name: "FLAT_RATE",
+          Ref: `'3MF Summary'!$B$${paramRow2}`,
+          Sheet: wb.SheetNames.indexOf("3MF Summary") // <-- Worksheet scope
+        }
+      );
+
+      wb.Workbook.CalcPr = { fullCalcOnLoad: true };
+
 
       // Generate XLSX file and trigger download
       XLSX.writeFile(wb, "3mf_summary.xlsx");
