@@ -376,6 +376,31 @@
       const data = [headers, ...rows];
       const ws = XLSX.utils.aoa_to_sheet(data);
 
+      // --- Fix: Set cell type to number for time and filament weight columns ---
+      // Column indices: 4 = Estimated Time, 6/8/10/12 = Filament Weights
+      const timeCol = 4;
+      const filamentWeightCols = [6, 8, 10, 12];
+      for (let rowIdx = 1; rowIdx < data.length; rowIdx++) { // skip header row
+        const row = data[rowIdx];
+        // Skip empty rows or rows with special headers
+        if (!row || row.length === 0 || row.length === 1) continue;
+        // Estimated Time
+        const timeCellRef = `${XLSX.utils.encode_col(timeCol)}${rowIdx + 1}`;
+        const timeVal = parseFloat(row[timeCol]);
+        if (!isNaN(timeVal)) {
+          ws[timeCellRef] = { v: timeVal, t: 'n' };
+        }
+        // Filament Weights
+        for (const col of filamentWeightCols) {
+          const cellRef = `${XLSX.utils.encode_col(col)}${rowIdx + 1}`;
+          const val = parseFloat(row[col]);
+          if (!isNaN(val)) {
+            ws[cellRef] = { v: val, t: 'n' };
+          }
+        }
+      }
+      // --- End fix ---
+
       // Get the range of the worksheet
       const range = XLSX.utils.decode_range(ws['!ref']);
       const lastColumn = XLSX.utils.encode_col(range.e.c);
