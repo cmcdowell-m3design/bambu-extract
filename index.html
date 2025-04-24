@@ -360,97 +360,76 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = '3mf_summary.csv';
+      a.download = 'print_summary.csv';
       a.click();
       URL.revokeObjectURL(url);
     });
 
     downloadXlsxBtn.addEventListener('click', () => {
-      const { headers, rows } = prepareExportData();
+      const { headers, regular, special, specialLabel } = prepareGroupedData(tableData);
       const { perGramCost, flatRate } = getPricingParams();
 
-      // Create workbook and worksheet
+      // Create workbook
       const wb = XLSX.utils.book_new();
 
-      // Convert to worksheet format
-      const data = [headers, ...rows];
-      const ws = XLSX.utils.aoa_to_sheet(data);
+      // --- Charges sheet (regular jobs) ---
+      const chargesData = [headers, ...regular.filter(row => row[1] !== 'none' && row[1].toUpperCase() !== 'M308')];
+      const chargesWs = XLSX.utils.aoa_to_sheet(chargesData);
 
-      // --- Fix: Set cell type to number for time and filament weight columns ---
-      // Column indices: 4 = Estimated Time, 6/8/10/12 = Filament Weights
+      // Set cell type to number for time and filament weight columns
       const timeCol = 4;
       const filamentWeightCols = [6, 8, 10, 12];
-      for (let rowIdx = 1; rowIdx < data.length; rowIdx++) { // skip header row
-        const row = data[rowIdx];
-        // Skip empty rows or rows with special headers
+      for (let rowIdx = 1; rowIdx < chargesData.length; rowIdx++) { // skip header row
+        const row = chargesData[rowIdx];
         if (!row || row.length === 0 || row.length === 1) continue;
         // Estimated Time
         const timeCellRef = `${XLSX.utils.encode_col(timeCol)}${rowIdx + 1}`;
         const timeVal = parseFloat(row[timeCol]);
         if (!isNaN(timeVal)) {
-          ws[timeCellRef] = { v: timeVal, t: 'n' };
+          chargesWs[timeCellRef] = { v: timeVal, t: 'n' };
         }
         // Filament Weights
         for (const col of filamentWeightCols) {
           const cellRef = `${XLSX.utils.encode_col(col)}${rowIdx + 1}`;
           const val = parseFloat(row[col]);
           if (!isNaN(val)) {
-            ws[cellRef] = { v: val, t: 'n' };
+            chargesWs[cellRef] = { v: val, t: 'n' };
           }
         }
       }
-      // --- End fix ---
 
-      // Get the range of the worksheet
-      const range = XLSX.utils.decode_range(ws['!ref']);
-      const lastColumn = XLSX.utils.encode_col(range.e.c);
-
-      // Add pricing parameters in separate cells at the bottom of the sheet
-      const lastDataRow = range.e.r + 2; // Leave one empty row after the data
+      // Add pricing parameters in separate cells at the bottom of the Charges sheet
+      const chargesRange = XLSX.utils.decode_range(chargesWs['!ref']);
+      const lastColumn = XLSX.utils.encode_col(chargesRange.e.c);
+      const lastDataRow = chargesRange.e.r + 2; // Leave one empty row after the data
       const paramRow1 = lastDataRow + 1;
       const paramRow2 = lastDataRow + 2;
-
-      // Add labels and values for pricing parameters
-      ws[`A${paramRow1}`] = { v: "Per-Gram Cost ($):", t: "s" };
-      ws[`B${paramRow1}`] = { v: perGramCost, t: "n" };
-      ws[`A${paramRow2}`] = { v: "Flat Rate ($):", t: "s" };
-      ws[`B${paramRow2}`] = { v: flatRate, t: "n" };
-
-      // Format the parameter cells
-      ws[`B${paramRow1}`].z = "0.00";
-      ws[`B${paramRow2}`].z = "0.00";
-
+      chargesWs[`A${paramRow1}`] = { v: "Per-Gram Cost ($):", t: "s" };
+      chargesWs[`B${paramRow1}`] = { v: perGramCost, t: "n" };
+      chargesWs[`A${paramRow2}`] = { v: "Flat Rate ($):", t: "s" };
+      chargesWs[`B${paramRow2}`] = { v: flatRate, t: "n" };
+      chargesWs[`B${paramRow1}`].z = "0.00";
+      chargesWs[`B${paramRow2}`].z = "0.00";
       // Update the range to include our new rows
-      const newRange = XLSX.utils.decode_range(ws['!ref']);
-      newRange.e.r = paramRow2;
-      ws['!ref'] = XLSX.utils.encode_range(newRange);
+      const newChargesRange = XLSX.utils.decode_range(chargesWs['!ref']);
+      newChargesRange.e.r = paramRow2;
+      chargesWs['!ref'] = XLSX.utils.encode_range(newChargesRange);
 
       // Add formulas for the total price column (only for actual data rows, not headers or separators)
       const formulaColIndex = headers.length - 1; // Last column index
-
-      for (let rowIdx = 1; rowIdx < data.length; rowIdx++) {
-        const row = data[rowIdx];
-        // Skip empty rows or rows with special headers
+      for (let rowIdx = 1; rowIdx < chargesData.length; rowIdx++) {
+        const row = chargesData[rowIdx];
         if (row.length === 0 || row.length === 1) continue;
-
-        // Calculate the sum of all filament weights (columns 6, 8, 10, 12)
-        // These correspond to the weight columns (index starts at 0)
         const filamentWeightColumns = [6, 8, 10, 12];
         const cellRefs = filamentWeightColumns.map(col => `${XLSX.utils.encode_col(col)}${rowIdx + 1}`);
-
-        // Create the formula: (sum of weights × perGramCost) + flatRate
-        // Now reference the parameter cells using named ranges
         const sumFormula = `SUM(${cellRefs.join(',')})`;
         const formula = `(${sumFormula}*PER_GRAM_COST)+FLAT_RATE`;
-
-        // Format as currency with $ and 2 decimal places
-        const cell = ws[`${lastColumn}${rowIdx + 1}`];
+        const cell = chargesWs[`${lastColumn}${rowIdx + 1}`];
         if (cell) {
           cell.f = formula;
           cell.z = '"$"#,##0.00';
         }
       }
-
       // Set column widths
       const colWidths = [
         { wch: 30 }, // File Name
@@ -468,34 +447,121 @@
         { wch: 15 }, // Weight 4
         { wch: 15 }, // Total Price
       ];
-      ws['!cols'] = colWidths;
+      chargesWs['!cols'] = colWidths;
+      XLSX.utils.book_append_sheet(wb, chargesWs, "Charges");
 
-      // Add worksheet to workbook
-      XLSX.utils.book_append_sheet(wb, ws, "3MF Summary");
-
-      // Add named ranges for the pricing parameters
+      // Add named ranges for the pricing parameters (only to Charges sheet)
       if (!wb.Workbook) wb.Workbook = {};
       if (!wb.Workbook.Names) wb.Workbook.Names = [];
-
-      // Add named ranges (Excel named cells) for the price parameters
       wb.Workbook.Names.push(
         {
           Name: "PER_GRAM_COST",
-          Ref: `'3MF Summary'!$B$${paramRow1}`,
-          Sheet: wb.SheetNames.indexOf("3MF Summary") // <-- Worksheet scope
+          Ref: `'Charges'!$B$${paramRow1}`,
+          Sheet: wb.SheetNames.indexOf("Charges")
         },
         {
           Name: "FLAT_RATE",
-          Ref: `'3MF Summary'!$B$${paramRow2}`,
-          Sheet: wb.SheetNames.indexOf("3MF Summary") // <-- Worksheet scope
+          Ref: `'Charges'!$B$${paramRow2}`,
+          Sheet: wb.SheetNames.indexOf("Charges")
         }
       );
-
       wb.Workbook.CalcPr = { fullCalcOnLoad: true };
 
+      // --- M308 sheet (special jobs) ---
+      if (special.length > 0) {
+        const m308Data = [headers, ...special];
+        const m308Ws = XLSX.utils.aoa_to_sheet(m308Data);
+        // Set cell type to number for time and filament weight columns
+        for (let rowIdx = 1; rowIdx < m308Data.length; rowIdx++) {
+          const row = m308Data[rowIdx];
+          if (!row || row.length === 0 || row.length === 1) continue;
+          // Estimated Time
+          const timeCellRef = `${XLSX.utils.encode_col(timeCol)}${rowIdx + 1}`;
+          const timeVal = parseFloat(row[timeCol]);
+          if (!isNaN(timeVal)) {
+            m308Ws[timeCellRef] = { v: timeVal, t: 'n' };
+          }
+          // Filament Weights
+          for (const col of filamentWeightCols) {
+            const cellRef = `${XLSX.utils.encode_col(col)}${rowIdx + 1}`;
+            const val = parseFloat(row[col]);
+            if (!isNaN(val)) {
+              m308Ws[cellRef] = { v: val, t: 'n' };
+            }
+          }
+        }
+        m308Ws['!cols'] = colWidths;
+
+        // Add pricing parameters in separate cells at the bottom of the M308 sheet
+        const m308Range = XLSX.utils.decode_range(m308Ws['!ref']);
+        const m308ParamRow1 = m308Range.e.r + 3; // leave one empty row after data
+        const m308ParamRow2 = m308ParamRow1 + 1;
+        m308Ws[`A${m308ParamRow1}`] = { v: "Per-Gram Cost ($):", t: "s" };
+        m308Ws[`B${m308ParamRow1}`] = { v: perGramCost, t: "n", z: "0.00" };
+        m308Ws[`A${m308ParamRow2}`] = { v: "Flat Rate ($):", t: "s" };
+        m308Ws[`B${m308ParamRow2}`] = { v: flatRate, t: "n", z: "0.00" };
+        // Update the range to include our new rows
+        const newM308Range = XLSX.utils.decode_range(m308Ws['!ref']);
+        newM308Range.e.r = m308ParamRow2;
+        m308Ws['!ref'] = XLSX.utils.encode_range(newM308Range);
+
+        XLSX.utils.book_append_sheet(wb, m308Ws, "M308");
+      }
+
+      // --- No Bill Code sheet (jobs with billingCode === 'none') ---
+      const noBillCode = tableData.filter(entry => entry.billingCode === 'none');
+      if (noBillCode.length > 0) {
+        const noBillRows = noBillCode.map(entry => {
+          const row = [entry.model, entry.billingCode, entry.entryDate, entry.printer, `${entry.timeMin}`];
+          for (let i = 0; i < 4; i++) {
+            const f = entry.filaments[i] || {};
+            row.push(f.type || '', f.g || '');
+          }
+          // Calculate total weight and price
+          const totalWeight = calculateTotalWeight(entry);
+          const totalPrice = calculatePrice(totalWeight, perGramCost, flatRate);
+          row.push(`$${totalPrice.toFixed(2)}`);
+          return row;
+        });
+        const noBillData = [headers, ...noBillRows];
+        const noBillWs = XLSX.utils.aoa_to_sheet(noBillData);
+        // Set cell type to number for time and filament weight columns
+        for (let rowIdx = 1; rowIdx < noBillData.length; rowIdx++) {
+          const row = noBillData[rowIdx];
+          if (!row || row.length === 0 || row.length === 1) continue;
+          // Estimated Time
+          const timeCellRef = `${XLSX.utils.encode_col(timeCol)}${rowIdx + 1}`;
+          const timeVal = parseFloat(row[timeCol]);
+          if (!isNaN(timeVal)) {
+            noBillWs[timeCellRef] = { v: timeVal, t: 'n' };
+          }
+          // Filament Weights
+          for (const col of filamentWeightCols) {
+            const cellRef = `${XLSX.utils.encode_col(col)}${rowIdx + 1}`;
+            const val = parseFloat(row[col]);
+            if (!isNaN(val)) {
+              noBillWs[cellRef] = { v: val, t: 'n' };
+            }
+          }
+        }
+        noBillWs['!cols'] = colWidths;
+        // Add pricing parameters in separate cells at the bottom of the No Bill Code sheet
+        const noBillRange = XLSX.utils.decode_range(noBillWs['!ref']);
+        const noBillParamRow1 = noBillRange.e.r + 3; // leave one empty row after data
+        const noBillParamRow2 = noBillParamRow1 + 1;
+        noBillWs[`A${noBillParamRow1}`] = { v: "Per-Gram Cost ($):", t: "s" };
+        noBillWs[`B${noBillParamRow1}`] = { v: perGramCost, t: "n", z: "0.00" };
+        noBillWs[`A${noBillParamRow2}`] = { v: "Flat Rate ($):", t: "s" };
+        noBillWs[`B${noBillParamRow2}`] = { v: flatRate, t: "n", z: "0.00" };
+        // Update the range to include our new rows
+        const newNoBillRange = XLSX.utils.decode_range(noBillWs['!ref']);
+        newNoBillRange.e.r = noBillParamRow2;
+        noBillWs['!ref'] = XLSX.utils.encode_range(newNoBillRange);
+        XLSX.utils.book_append_sheet(wb, noBillWs, "No Bill Code");
+      }
 
       // Generate XLSX file and trigger download
-      XLSX.writeFile(wb, "3mf_summary.xlsx");
+      XLSX.writeFile(wb, 'print_summary.xlsx');
     });
   </script>
 </body>
