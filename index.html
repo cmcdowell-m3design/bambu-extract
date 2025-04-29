@@ -130,7 +130,7 @@
     </div>
     <div class="input-group">
       <label for="flatRate">Flat Rate ($):</label>
-      <input type="text" id="flatRate" value="23.20" pattern="^\d+(\.\d{1,2})?$">
+      <input type="text" id="flatRate" value="9.17" pattern="^\d+(\.\d{1,2})?$">
     </div>
     <button id="updatePricesBtn">Update Prices</button>
     <div id="priceError" class="price-error"></div>
@@ -255,7 +255,7 @@
 
       return {
         perGramCost: isNaN(per) ? 0.40 : per,
-        flatRate: isNaN(flat) ? 23.20 : flat
+        flatRate: isNaN(flat) ? 9.17 : flat
       };
     }
 
